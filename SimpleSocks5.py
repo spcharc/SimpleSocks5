@@ -70,12 +70,12 @@ async def handler(reader, writer):
     # -------- negotiation ends
     ver, cmd, rsv, atyp = await read_struct('!BBBB')
     if ver != 5:  # ver should be 5
-        print('ERROR: Unsupported socks version', ver)
+        print('ERROR: Unsupported socks version:', ver)
         writer.close()
         await writer.wait_closed()
         return
     if cmd != 1:  # 1=connect, 2=bind, 3=udp associate
-        print('ERROR: Unsupported client command', cmd)
+        print('ERROR: Unsupported command:', cmd)
         writer.close()
         await writer.wait_closed()
         return
@@ -92,7 +92,7 @@ async def handler(reader, writer):
         host = await reader.readexactly(16)
         hostname = socket.inet_ntop(socket.AF_INET6, host)
     else:
-        print('Error: invalid atyp in request')
+        print('ERROR: invalid atyp in request')
         writer.close()
         await writer.wait_closed()
         return
