@@ -63,7 +63,7 @@ async def handler(reader, writer):
 
     if nmethods > 0:
         methods = await reader.readexactly(nmethods)
-        # print('Client methods: ', [i for i in methods])
+        # print('Client methods:', list(methods))
 
     writer.write(struct.pack('!BB', 5, 0)) # no auth
 
