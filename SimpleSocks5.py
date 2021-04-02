@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import asyncio
 import socket
 import struct
@@ -118,7 +119,6 @@ async def handler(reader, writer):
     if not transport.is_closing():
         transport.close()
 
-if __name__ == '__main__':
-    lp.run_until_complete(asyncio.start_server(handler, *listen))
-    print('Started')
-    lp.run_forever()
+lp.run_until_complete(asyncio.start_server(handler, *listen))
+print('Started')
+lp.run_forever()
