@@ -92,6 +92,8 @@ async def handler(reader, writer):
         hostname = socket.inet_ntop(socket.AF_INET6, host)
     else:
         print('Error: invalid atyp in request')
+        writer.close()
+        await writer.wait_closed()
         return
 
     port, = await read_struct('!H')
