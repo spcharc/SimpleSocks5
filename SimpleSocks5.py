@@ -41,7 +41,7 @@ class InternalError(Exception):
 
 
 async def pipe(reader, writer):
-    # pipe data from reader into writer
+    # pipes data from reader into writer
 
     while True:
         data = await reader.read(8192)     # 8kb
@@ -71,7 +71,6 @@ async def handler_raises(reader, writer):
     if nmethods == 0:
         raise AuthMethodNotSupported
     methods = await reader.readexactly(nmethods)
-    # print('Client methods:', list(methods))
     if 0 not in methods:          # 'int' in 'bytes'
         raise AuthMethodNotSupported
 
@@ -185,8 +184,8 @@ async def handler(reader, writer):
         await writer.drain()
         writer.close()
 
-
-loop = asyncio.get_event_loop()
-loop.run_until_complete(asyncio.start_server(handler, addr, port))
-print('Started. Listening on', addr, ':', port)
-loop.run_forever()
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(asyncio.start_server(handler, addr, port))
+    print('Listening on', addr, ':', port)
+    loop.run_forever()
