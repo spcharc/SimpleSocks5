@@ -41,7 +41,7 @@ class InternalError(Exception):
 
 
 async def pipe(reader, writer):
-    # pipe data from writer into reader
+    # pipe data from reader into writer
 
     while True:
         data = await reader.read(8192)     # 8kb
