@@ -3,48 +3,57 @@ import asyncio
 import socket
 import struct
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 __author__ = 'spcharc'
 
 
-listen = '0.0.0.0', 8000
+addr = '0.0.0.0'
+port = 1080
 # define which address and port to listen on
 
-lp = asyncio.get_event_loop()
 
-def protocol_factory(writer):
+class IncorrectFormat(Exception):
+    pass
 
-    class StreamProtocol(asyncio.Protocol):
+class SocksVersionIncorrect(Exception):
+    pass
 
-        def connection_made(self, transport):
-            conn_socket = transport.get_extra_info('socket')
-            conn_ip, conn_port = conn_socket.getsockname()[0:2]
-            # in case of AF_INET6, a tuple of length 4 would be returned
+class AuthMethodNotSupported(Exception):
+    pass
 
-            if conn_socket.family == socket.AF_INET:
-                conn_family = 1
-            elif conn_socket.family == socket.AF_INET6:
-                conn_family = 4
-            else:
-                print('internal error, should not reach here')
-                return
+class UnsupportedCommand(Exception):
+    pass
 
-            writer.write(struct.pack('!BBBB', 5, 0, 0, conn_family))
-            writer.write(socket.inet_pton(conn_socket.family, conn_ip))
-            writer.write(struct.pack('!H', conn_port))
+class AddressTypeNotSupported(Exception):
+    pass
 
-        def connection_lost(self, exception):
-            if exception is not None:
-                print(exception)
-            writer.close()
+class HostNotFound(Exception):
+    pass
 
-        def data_received(self, data):
-            writer.write(data)
+class ConnectionRefused(Exception):
+    pass
 
-    return StreamProtocol
+class ConnectionFailed(Exception):
+    pass
+
+class InternalError(Exception):
+    pass
 
 
-async def handler(reader, writer):
+async def pipe(reader, writer):
+    # pipe data from writer into reader
+
+    while True:
+        data = await reader.read(8192)     # 8kb
+        if len(data) == 0:
+            break
+        writer.write(data)
+
+    await writer.drain()
+    writer.close()
+
+
+async def handler_raises(reader, writer):
 
     async def read_struct(data_format):
 
@@ -57,30 +66,27 @@ async def handler(reader, writer):
     ver, nmethods = await read_struct('!BB')
 
     if ver != 5:  # ver should be 5
-        writer.close()
-        await writer.wait_closed()
-        return
+        raise IncorrectFormat
 
-    if nmethods > 0:
-        methods = await reader.readexactly(nmethods)
-        # print('Client methods:', list(methods))
+    if nmethods == 0:
+        raise AuthMethodNotSupported
+    methods = await reader.readexactly(nmethods)
+    # print('Client methods:', list(methods))
+    if 0 not in methods:          # 'int' in 'bytes'
+        raise AuthMethodNotSupported
 
-    writer.write(struct.pack('!BB', 5, 0)) # no auth
+    writer.write(struct.pack('!BB', 5, 0))   # NO AUTHENTICATION REQUIRED
 
-    # -------- negotiation ends
+    # -------- negotiation ends --------
     ver, cmd, rsv, atyp = await read_struct('!BBBB')
     if ver != 5:  # ver should be 5
-        print('ERROR: Unsupported socks version:', ver)
-        writer.close()
-        await writer.wait_closed()
-        return
+        raise SocksVersionIncorrect
+
     if cmd != 1:  # 1=connect, 2=bind, 3=udp associate
-        print('ERROR: Unsupported command:', cmd)
-        writer.close()
-        await writer.wait_closed()
-        return
+        raise UnsupportedCommand
+
     if rsv != 0:  # rsv should be 0
-        return
+        raise IncorrectFormat
 
     if atyp == 1:   # ipv4
         host = await reader.readexactly(4)
@@ -92,33 +98,95 @@ async def handler(reader, writer):
         host = await reader.readexactly(16)
         hostname = socket.inet_ntop(socket.AF_INET6, host)
     else:
-        print('ERROR: invalid atyp in request')
-        writer.close()
-        await writer.wait_closed()
-        return
+        raise AddressTypeNotSupported
 
     port, = await read_struct('!H')
 
-    print('Connection to', hostname, ':', port)
+    print('Connect to', hostname, ':', port)
 
-    transport, protocol = await lp.create_connection(
-        protocol_factory(writer),
-        hostname,
-        port
-    )
+    try:
+        reader2, writer2 = await asyncio.open_connection(hostname, port)
+    except socket.gaierror:
+        raise HostNotFound
+    except ConnectionRefusedError:
+        raise ConnectionRefused
+    except Exception:
+        raise ConnectionFailed
 
-    while True:
-        data = await reader.read(8192)
-        # read(8192) reads at most 8192 bytes, but it can return before that.
-        # So the program doesn't wait until 8192 bytes are received. It always
-        #     tries to send whatever it has.
-        if len(data) == 0:
-            break
-        transport.write(data)
+    conn_socket = writer2.get_extra_info('socket')
+    conn_ip, conn_port = conn_socket.getsockname()[0:2]
+    # in case of AF_INET6, a tuple of length 4 would be returned
 
-    if not transport.is_closing():
-        transport.close()
+    if conn_socket.family == socket.AF_INET:
+        conn_family = 1
+    elif conn_socket.family == socket.AF_INET6:
+        conn_family = 4
+    else:
+        raise InternalError
 
-lp.run_until_complete(asyncio.start_server(handler, *listen))
-print('Started')
-lp.run_forever()
+    writer.write(struct.pack('!BBBB', 5, 0, 0, conn_family))
+    writer.write(socket.inet_pton(conn_socket.family, conn_ip))
+    writer.write(struct.pack('!H', conn_port))
+
+    await asyncio.gather(pipe(reader2, writer),
+                         pipe(reader, writer2),
+                         return_exceptions=True)
+
+
+
+async def handler(reader, writer):
+    # wrap handler_raises, this function handles exceptions
+
+    try:
+        await handler_raises(reader, writer)
+
+    except IncorrectFormat:
+        writer.close()
+        print("ERROR: Incorrect data format. Using Sock5?")
+
+    except AuthMethodNotSupported:
+        writer.write(struct.pack('!BB', 5, 255))  # NO ACCEPTABLE METHODS
+        await writer.drain()
+        writer.close()
+
+    except UnsupportedCommand:
+        writer.write(struct.pack('!BBBBIH', 5, 7, 0, 1, 0, 0))
+        # Command not supported
+        await writer.drain()
+        writer.close()
+
+    except AddressTypeNotSupported:
+        writer.write(struct.pack('!BBBBIH', 5, 8, 0, 1, 0, 0))
+        # Address type not supported
+        await writer.drain()
+        writer.close()
+
+    except HostNotFound:
+        writer.write(struct.pack('!BBBBIH', 5, 4, 0, 1, 0, 0))
+        # Host unreachable
+        await writer.drain()
+        writer.close()
+
+    except ConnectionRefused:
+        writer.write(struct.pack('!BBBBIH', 5, 5, 0, 1, 0, 0))
+        # Network unreachable
+        await writer.drain()
+        writer.close()
+
+    except ConnectionFailed:
+        writer.write(struct.pack('!BBBBIH', 5, 3, 0, 1, 0, 0))
+        # Network unreachable
+        await writer.drain()
+        writer.close()
+
+    except InternalError:
+        writer.write(struct.pack('!BBBBIH', 5, 1, 0, 1, 0, 0))
+        # general SOCKS server failure (should not reach here)
+        await writer.drain()
+        writer.close()
+
+
+loop = asyncio.get_event_loop()
+loop.run_until_complete(asyncio.start_server(handler, addr, port))
+print('Started. Listening on', addr, ':', port)
+loop.run_forever()
