@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
+
+# requires Python 3.8+
+
 import asyncio
 import socket
 import struct
 
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 __author__ = 'spcharc'
 
 
@@ -40,17 +43,15 @@ class InternalError(Exception):
     pass
 
 
-async def pipe(reader, writer):
+async def pipe_data(reader, writer):
     # pipes data from reader into writer
 
-    while True:
-        data = await reader.read(8192)     # 8kb
-        if len(data) == 0:
-            break
+    while len(data := await reader.read(8192)):  # 8kb
         writer.write(data)
+        await writer.drain()
 
-    await writer.drain()
     writer.close()
+    await writer.wait_closed()
 
 
 async def handler_raises(reader, writer):
@@ -75,6 +76,7 @@ async def handler_raises(reader, writer):
         raise AuthMethodNotSupported
 
     writer.write(struct.pack('!BB', 5, 0))   # NO AUTHENTICATION REQUIRED
+    await writer.drain()
 
     # -------- negotiation ends --------
     ver, cmd, rsv, atyp = await read_struct('!BBBB')
@@ -126,9 +128,10 @@ async def handler_raises(reader, writer):
     writer.write(struct.pack('!BBBB', 5, 0, 0, conn_family))
     writer.write(socket.inet_pton(conn_socket.family, conn_ip))
     writer.write(struct.pack('!H', conn_port))
+    await writer.drain()
 
-    await asyncio.gather(pipe(reader2, writer),
-                         pipe(reader, writer2),
+    await asyncio.gather(pipe_data(reader2, writer),
+                         pipe_data(reader, writer2),
                          return_exceptions=True)
 
 
@@ -141,48 +144,57 @@ async def handler(reader, writer):
 
     except IncorrectFormat:
         writer.close()
+        await writer.wait_closed()
         print("ERROR: Incorrect data format. Using Sock5?")
 
     except AuthMethodNotSupported:
         writer.write(struct.pack('!BB', 5, 255))  # NO ACCEPTABLE METHODS
         await writer.drain()
         writer.close()
+        await writer.wait_closed()
 
     except UnsupportedCommand:
         writer.write(struct.pack('!BBBBIH', 5, 7, 0, 1, 0, 0))
         # Command not supported
         await writer.drain()
         writer.close()
+        await writer.wait_closed()
 
     except AddressTypeNotSupported:
         writer.write(struct.pack('!BBBBIH', 5, 8, 0, 1, 0, 0))
         # Address type not supported
         await writer.drain()
         writer.close()
+        await writer.wait_closed()
 
     except HostNotFound:
         writer.write(struct.pack('!BBBBIH', 5, 4, 0, 1, 0, 0))
         # Host unreachable
         await writer.drain()
         writer.close()
+        await writer.wait_closed()
 
     except ConnectionRefused:
         writer.write(struct.pack('!BBBBIH', 5, 5, 0, 1, 0, 0))
         # Network unreachable
         await writer.drain()
         writer.close()
+        await writer.wait_closed()
 
     except ConnectionFailed:
         writer.write(struct.pack('!BBBBIH', 5, 3, 0, 1, 0, 0))
         # Network unreachable
         await writer.drain()
         writer.close()
+        await writer.wait_closed()
 
     except InternalError:
         writer.write(struct.pack('!BBBBIH', 5, 1, 0, 1, 0, 0))
         # general SOCKS server failure (should not reach here)
         await writer.drain()
         writer.close()
+        await writer.wait_closed()
+
 
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
