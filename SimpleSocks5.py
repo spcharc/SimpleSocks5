@@ -145,13 +145,24 @@ async def handler(reader, writer):
     except IncorrectFormat:
         writer.close()
         await writer.wait_closed()
-        print("ERROR: Incorrect data format. Using Sock5?")
+        print('ERROR: Incorrect data format. Using socks5?')
+
+    except SocksVersionIncorrect:
+        writer.close()
+        await writer.wait_closed()
+        print('ERROR: Socks version should be 5.')
+
+    except asyncio.IncompleteReadError:
+        writer.close()
+        await writer.wait_closed()
+        print('INFO: Peer closed socket unexpectedly.')
 
     except AuthMethodNotSupported:
         writer.write(struct.pack('!BB', 5, 255))  # NO ACCEPTABLE METHODS
         await writer.drain()
         writer.close()
         await writer.wait_closed()
+        print('ERROR: This program only supports socks5 without encryption.')
 
     except UnsupportedCommand:
         writer.write(struct.pack('!BBBBIH', 5, 7, 0, 1, 0, 0))
@@ -159,6 +170,7 @@ async def handler(reader, writer):
         await writer.drain()
         writer.close()
         await writer.wait_closed()
+        print('ERROR: This program only supports socks5 CONNECT command.')
 
     except AddressTypeNotSupported:
         writer.write(struct.pack('!BBBBIH', 5, 8, 0, 1, 0, 0))
@@ -166,6 +178,7 @@ async def handler(reader, writer):
         await writer.drain()
         writer.close()
         await writer.wait_closed()
+        print('ERROR: This program does not support this address type.')
 
     except HostNotFound:
         writer.write(struct.pack('!BBBBIH', 5, 4, 0, 1, 0, 0))
@@ -194,6 +207,7 @@ async def handler(reader, writer):
         await writer.drain()
         writer.close()
         await writer.wait_closed()
+        print('ERROR: Socket family incorrect ... this should not happen.')
 
 
 if __name__ == '__main__':
