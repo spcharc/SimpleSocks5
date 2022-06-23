@@ -6,7 +6,7 @@ import asyncio
 import socket
 import struct
 
-__version__ = '1.0.2'
+__version__ = '1.0.3'
 __author__ = 'spcharc'
 
 
@@ -211,7 +211,7 @@ async def handler(reader, writer):
 
 
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
+    loop = asyncio.new_event_loop()
     loop.run_until_complete(asyncio.start_server(handler, addr, port))
     print('Listening on', addr, ':', port)
     loop.run_forever()
