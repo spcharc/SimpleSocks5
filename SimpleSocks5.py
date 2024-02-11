@@ -6,13 +6,8 @@ import asyncio
 import socket
 import struct
 
-__version__ = '1.0.3'
+__version__ = '1.0.4'
 __author__ = 'spcharc'
-
-
-addr = '0.0.0.0'
-port = 1080
-# define which address and port to listen on
 
 
 class IncorrectFormat(Exception):
@@ -210,8 +205,16 @@ async def handler(reader, writer):
         print('ERROR: Socket family incorrect ... this should not happen.')
 
 
+async def main(addr, port):
+    await asyncio.start_server(handler, addr, port)
+
+
 if __name__ == '__main__':
+    addr = '0.0.0.0'
+    port = 1080
+    # define which address and port to listen on
+
     loop = asyncio.new_event_loop()
-    loop.run_until_complete(asyncio.start_server(handler, addr, port))
+    loop.run_until_complete(main(addr, port))
     print('Listening on', addr, ':', port)
     loop.run_forever()
