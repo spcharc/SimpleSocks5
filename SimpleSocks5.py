@@ -49,7 +49,7 @@ async def pipe_data(reader, writer):
     await writer.wait_closed()
 
 
-async def handler_raises(reader, writer, white_list_mode, allowed_network_ranges):
+async def handler_raises(reader, writer):
 
     async def read_struct(data_format):
 
