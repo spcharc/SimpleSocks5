@@ -79,6 +79,7 @@ def ip_in_range(ip_str, ip_ranges):
             if isinstance(ip_range, str):
                 ip_range = ipaddress.ip_network(ip_range, strict=False)
             if ip in ip_range:
+                print(f'DEBUG IP {ip_str} matched range {ip_range}')
                 return True
         return False
     except ValueError:
