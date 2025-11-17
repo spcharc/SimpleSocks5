@@ -180,8 +180,9 @@ async def handler_raises(reader, writer):
     conn_ip, conn_port = conn_socket.getsockname()[0:2]
     # in case of AF_INET6, a tuple of length 4 would be returned
 
-    # Check outgoing blacklist
-    if check_outgoing_blacklist(conn_ip):
+    # Check outgoing blacklist against peer (target) IP
+    peer_ip, peer_port = conn_socket.getpeername()[0:2]
+    if check_outgoing_blacklist(peer_ip):
         writer2.close()
         await writer2.wait_closed()
         raise OutgoingBlacklisted
