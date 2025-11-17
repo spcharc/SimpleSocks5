@@ -5,6 +5,7 @@
 import asyncio
 import socket
 import struct
+import ipaddress
 
 __version__ = '1.0.5'
 __author__ = 'spcharc'
@@ -37,6 +38,64 @@ class ConnectionFailed(Exception):
 class InternalError(Exception):
     pass
 
+class IncomingNotWhitelisted(Exception):
+    pass
+
+class OutgoingBlacklisted(Exception):
+    pass
+
+
+# Default outgoing blacklist: all RFC1918 private IP ranges
+DEFAULT_OUTGOING_BLACKLIST = [
+    '10.0.0.0/8',
+    '172.16.0.0/12',
+    '192.168.0.0/16',
+    '127.0.0.0/8',  # loopback
+    '169.254.0.0/16',  # link-local
+    'fc00::/7',  # IPv6 private
+    'fe80::/10',  # IPv6 link-local
+    '::1/128',  # IPv6 loopback
+]
+
+# Configuration: can be modified before running main()
+incoming_white_list = []  # empty means disabled
+outgoing_black_list = [ipaddress.ip_network(net) for net in DEFAULT_OUTGOING_BLACKLIST]
+
+
+def ip_in_range(ip_str, ip_ranges):
+    """
+    Check if an IP address matches any range in the list.
+
+    Args:
+        ip_str: IP address as string (e.g., "192.168.1.1")
+        ip_ranges: List of ipaddress.ip_network objects or CIDR strings
+
+    Returns:
+        True if IP matches any range, False otherwise
+    """
+    try:
+        ip = ipaddress.ip_address(ip_str)
+        for ip_range in ip_ranges:
+            if isinstance(ip_range, str):
+                ip_range = ipaddress.ip_network(ip_range, strict=False)
+            if ip in ip_range:
+                return True
+        return False
+    except ValueError:
+        return False
+
+
+def check_incoming_whitelist(incoming_ip):
+    """Check if incoming IP is whitelisted. Returns True if allowed, False if blocked."""
+    if not incoming_white_list:  # whitelist disabled
+        return True
+    return ip_in_range(incoming_ip, incoming_white_list)
+
+
+def check_outgoing_blacklist(outgoing_ip):
+    """Check if outgoing IP is blacklisted. Returns True if blocked, False if allowed."""
+    return ip_in_range(outgoing_ip, outgoing_black_list)
+
 
 async def pipe_data(reader, writer):
     # pipes data from reader into writer
@@ -59,6 +118,10 @@ async def handler_raises(reader, writer):
 
     incoming_socket = writer.get_extra_info('socket')
     incoming_ip, incoming_port = incoming_socket.getpeername()[0:2]
+
+    # Check incoming whitelist
+    if not check_incoming_whitelist(incoming_ip):
+        raise IncomingNotWhitelisted
 
     # https://tools.ietf.org/html/rfc1928
 
@@ -116,6 +179,12 @@ async def handler_raises(reader, writer):
     conn_ip, conn_port = conn_socket.getsockname()[0:2]
     # in case of AF_INET6, a tuple of length 4 would be returned
 
+    # Check outgoing blacklist
+    if check_outgoing_blacklist(conn_ip):
+        writer2.close()
+        await writer2.wait_closed()
+        raise OutgoingBlacklisted
+
     if conn_socket.family == socket.AF_INET:
         conn_family = 1
     elif conn_socket.family == socket.AF_INET6:
@@ -140,6 +209,17 @@ async def handler(reader, writer):
     try:
         await handler_raises(reader, writer)
 
+    # X'00' succeeded
+    # X'01' general SOCKS server failure
+    # X'02' connection not allowed by ruleset
+    # X'03' Network unreachable
+    # X'04' Host unreachable
+    # X'05' Connection refused
+    # X'06' TTL expired
+    # X'07' Command not supported
+    # X'08' Address type not supported
+    # X'09' to X'FF' unassigned
+
     except IncorrectFormat:
         writer.close()
         await writer.wait_closed()
@@ -154,6 +234,11 @@ async def handler(reader, writer):
         writer.close()
         await writer.wait_closed()
         print('INFO: Peer closed socket unexpectedly.')
+
+    except IncomingNotWhitelisted:
+        writer.close()
+        await writer.wait_closed()
+        print('ERROR: Incoming IP not in whitelist.')
 
     except AuthMethodNotSupported:
         writer.write(struct.pack('!BB', 5, 255))  # NO ACCEPTABLE METHODS
@@ -187,7 +272,7 @@ async def handler(reader, writer):
 
     except ConnectionRefused:
         writer.write(struct.pack('!BBBBIH', 5, 5, 0, 1, 0, 0))
-        # Network unreachable
+        # Connection refused
         await writer.drain()
         writer.close()
         await writer.wait_closed()
@@ -198,6 +283,14 @@ async def handler(reader, writer):
         await writer.drain()
         writer.close()
         await writer.wait_closed()
+
+    except OutgoingBlacklisted:
+        writer.write(struct.pack('!BBBBIH', 5, 2, 0, 1, 0, 0))
+        # Connection not allowed by ruleset
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+        print('ERROR: Outgoing IP in blacklist.')
 
     except InternalError:
         writer.write(struct.pack('!BBBBIH', 5, 1, 0, 1, 0, 0))
