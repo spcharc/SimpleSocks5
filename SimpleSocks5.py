@@ -6,7 +6,7 @@ import asyncio
 import socket
 import struct
 
-__version__ = '1.0.4'
+__version__ = '1.0.5'
 __author__ = 'spcharc'
 
 
@@ -49,13 +49,16 @@ async def pipe_data(reader, writer):
     await writer.wait_closed()
 
 
-async def handler_raises(reader, writer):
+async def handler_raises(reader, writer, white_list_mode, allowed_network_ranges):
 
     async def read_struct(data_format):
 
         length = struct.calcsize(data_format)
         content = await reader.readexactly(length)
         return struct.unpack(data_format, content)
+
+    incoming_socket = writer.get_extra_info('socket')
+    incoming_ip, incoming_port = incoming_socket.getpeername()[0:2]
 
     # https://tools.ietf.org/html/rfc1928
 
@@ -98,7 +101,7 @@ async def handler_raises(reader, writer):
 
     port, = await read_struct('!H')
 
-    print('Connect to', hostname, ':', port)
+    print(f'Connection: {incoming_ip} : {incoming_port} -> {hostname} : {port}')
 
     try:
         reader2, writer2 = await asyncio.open_connection(hostname, port)
@@ -216,5 +219,5 @@ if __name__ == '__main__':
 
     loop = asyncio.new_event_loop()
     loop.run_until_complete(main(addr, port))
-    print('Listening on', addr, ':', port)
+    print(f'Listening on {addr} : {port}')
     loop.run_forever()
