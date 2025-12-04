@@ -245,6 +245,14 @@ async def handler(reader, writer, incoming_whitelist, outgoing_blacklist):
         await writer.wait_closed()
         print(f'ERROR: Incoming IP {e.ip} not in whitelist.')
 
+    except OutgoingBlacklisted as e:
+        writer.write(struct.pack('!BBBBIH', 5, 2, 0, 1, 0, 0))
+        # Connection not allowed by ruleset
+        await writer.drain()
+        writer.close()
+        await writer.wait_closed()
+        print(f'ERROR: Outgoing IP {e.ip} in blacklist.')
+
     except AuthMethodNotSupported:
         writer.write(struct.pack('!BB', 5, 255))  # NO ACCEPTABLE METHODS
         await writer.drain()
@@ -288,14 +296,6 @@ async def handler(reader, writer, incoming_whitelist, outgoing_blacklist):
         await writer.drain()
         writer.close()
         await writer.wait_closed()
-
-    except OutgoingBlacklisted as e:
-        writer.write(struct.pack('!BBBBIH', 5, 2, 0, 1, 0, 0))
-        # Connection not allowed by ruleset
-        await writer.drain()
-        writer.close()
-        await writer.wait_closed()
-        print(f'ERROR: Outgoing IP {e.ip} in blacklist.')
 
     except InternalError:
         writer.write(struct.pack('!BBBBIH', 5, 1, 0, 1, 0, 0))
