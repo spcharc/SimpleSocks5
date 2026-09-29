@@ -7,7 +7,7 @@ import socket
 import struct
 import ipaddress
 
-__version__ = '1.1.0'
+__version__ = '1.1.1'
 __author__ = 'spcharc'
 
 
@@ -153,7 +153,6 @@ async def handler_raises(reader, writer, incoming_whitelist, outgoing_blacklist)
         hostname = socket.inet_ntop(socket.AF_INET, host)
         if check_outgoing_blacklist(hostname, outgoing_blacklist):
             raise OutgoingBlacklisted(hostname)
-        print(f'Connection: {incoming_ip} : {incoming_port} -> {hostname} : {port}')
     elif atyp == 3: # domain
         length, = await read_struct('!B')
         hostname = (await reader.readexactly(length)).decode('ascii')
@@ -162,7 +161,6 @@ async def handler_raises(reader, writer, incoming_whitelist, outgoing_blacklist)
         hostname = socket.inet_ntop(socket.AF_INET6, host)
         if check_outgoing_blacklist(hostname, outgoing_blacklist):
             raise OutgoingBlacklisted(hostname)
-        print(f'Connection: {incoming_ip} : {incoming_port} -> {hostname} : {port}')
     else:
         raise AddressTypeNotSupported
 
@@ -189,6 +187,8 @@ async def handler_raises(reader, writer, incoming_whitelist, outgoing_blacklist)
             await writer2.wait_closed()
             raise OutgoingBlacklisted(peer_ip)
         print(f'Connection: {incoming_ip} : {incoming_port} -> {hostname} | {peer_ip} : {port}')
+    else:
+        print(f'Connection: {incoming_ip} : {incoming_port} -> {hostname} : {port}')
 
     if conn_socket.family == socket.AF_INET:
         conn_family = 1
